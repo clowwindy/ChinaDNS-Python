@@ -29,13 +29,14 @@ import errno
 import struct
 import logging
 
+import argparse
+from shadowsocks import eventloop, asyncdns, lru_cache, common
+
 info = sys.version_info
+
 if not (info[0] == 2 and info[1] >= 7):
     print 'Python 2.7 required'
     sys.exit(1)
-
-import argparse
-from shadowsocks import eventloop, asyncdns, lru_cache
 
 
 BUF_SIZE = 16384
@@ -92,7 +93,7 @@ class DNSRelay(object):
                     parts = line.split()
                     if len(parts) >= 2:
                         ip = parts[0]
-                        if asyncdns.is_ip(ip):
+                        if common.is_ip(ip):
                             for i in xrange(1, len(parts)):
                                 hostname = parts[i]
                                 if hostname:
