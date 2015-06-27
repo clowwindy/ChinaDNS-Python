@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import sys
-sys.path.insert(0, 'shadowsocks')
 import os
 import signal
 import select
+
 from subprocess import Popen, PIPE
+
+sys.path.insert(0, 'shadowsocks')
 
 with open(sys.argv[-1]) as f:
     dig_cmd = f.read()

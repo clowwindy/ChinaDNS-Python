@@ -29,13 +29,14 @@ import errno
 import struct
 import logging
 
+import argparse
+from shadowsocks import eventloop, asyncdns, lru_cache, common
+
 info = sys.version_info
+
 if not (info[0] == 2 and info[1] >= 7):
     print 'Python 2.7 required'
     sys.exit(1)
-
-import argparse
-from shadowsocks import eventloop, asyncdns, lru_cache, common
 
 
 BUF_SIZE = 16384
