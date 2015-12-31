@@ -28,15 +28,14 @@ import socket
 import errno
 import struct
 import logging
+import argparse
+from shadowsocks import eventloop, asyncdns, lru_cache, common
 
 info = sys.version_info
+
 if not (info[0] == 2 and info[1] >= 7):
     print 'Python 2.7 required'
     sys.exit(1)
-
-import argparse
-from shadowsocks import eventloop, asyncdns, lru_cache
-
 
 BUF_SIZE = 16384
 
@@ -79,7 +78,7 @@ class DNSRelay(object):
         if self._loop:
             raise Exception('already add to loop')
         self._loop = loop
-        loop.add_handler(self.handle_events)
+        # loop.add_handler(self.handle_events)
 
     def _parse_hosts(self):
         etc_path = '/etc/hosts'
@@ -92,7 +91,7 @@ class DNSRelay(object):
                     parts = line.split()
                     if len(parts) >= 2:
                         ip = parts[0]
-                        if asyncdns.is_ip(ip):
+                        if common.is_ip(ip):
                             for i in xrange(1, len(parts)):
                                 hostname = parts[i]
                                 if hostname:
@@ -118,11 +117,11 @@ class DNSRelay(object):
 
         # for hostname compression
         answer = struct.pack('!H', ((128 + 64) << 8 | 12)) + \
-            struct.pack('!HHiH', qtype, asyncdns.QCLASS_IN, 300,
-                        len(addr)) + addr
+                 struct.pack('!HHiH', qtype, asyncdns.QCLASS_IN, 300,
+                             len(addr)) + addr
         return header + question + answer
 
-    def handle_events(self, events):
+    def handle_event(self, sock, fd, event):
         pass
 
 
@@ -158,14 +157,14 @@ class UDPDNSRelay(DNSRelay):
         self._local_sock.close()
         self._remote_sock.close()
         self._create_sockets()
-        self._loop.add(self._local_sock, eventloop.POLL_IN)
-        self._loop.add(self._remote_sock, eventloop.POLL_IN)
+        self._loop.add(self._local_sock, eventloop.POLL_IN, self)
+        self._loop.add(self._remote_sock, eventloop.POLL_IN, self)
 
     def add_to_loop(self, loop):
         DNSRelay.add_to_loop(self, loop)
 
-        loop.add(self._local_sock, eventloop.POLL_IN)
-        loop.add(self._remote_sock, eventloop.POLL_IN)
+        loop.add(self._local_sock, eventloop.POLL_IN, self)
+        loop.add(self._remote_sock, eventloop.POLL_IN, self)
 
     def _handle_local(self, sock):
         try:
@@ -224,6 +223,7 @@ class UDPDNSRelay(DNSRelay):
                             # delay empty results
                             def _send_later():
                                 self._local_sock.sendto(data, addr)
+
                             self._pending_responses.append((time.time(),
                                                             _send_later))
                             return
@@ -237,12 +237,11 @@ class UDPDNSRelay(DNSRelay):
                     # when we have changed our ip
                     self._rebuild_sockets()
 
-    def handle_events(self, events):
-        for sock, fd, event in events:
-            if sock == self._local_sock:
-                self._handle_local(sock)
-            elif sock == self._remote_sock:
-                self._handle_remote(sock)
+    def handle_event(self, sock, fd, event):
+        if sock == self._local_sock:
+            self._handle_local(sock)
+        elif sock == self._remote_sock:
+            self._handle_remote(sock)
         now = time.time()
         if now - self._last_time > CACHE_TIMEOUT / 2:
             self._id_to_addr.sweep()
@@ -282,8 +281,7 @@ class TCPDNSRelay(DNSRelay):
                                        self._remote_addr[1], 0,
                                        socket.SOCK_STREAM, socket.SOL_TCP)
             if len(addrs) == 0:
-                raise Exception("can't get addrinfo for %s:%d" %
-                                self._remote_addr)
+                raise Exception("can't get addrinfo for %s:null" % self._remote_addr)
             af, socktype, proto, canonname, sa = addrs[0]
             remote = socket.socket(af, socktype, proto)
             local.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
@@ -291,8 +289,8 @@ class TCPDNSRelay(DNSRelay):
             self._local_to_remote[local] = remote
             self._remote_to_local[remote] = local
 
-            self._loop.add(local, 0)
-            self._loop.add(remote, eventloop.POLL_OUT)
+            self._loop.add(local, 0, self)
+            self._loop.add(remote, eventloop.POLL_OUT, self)
             try:
                 remote.connect(self._remote_addr)
             except (OSError, IOError) as e:
@@ -356,17 +354,16 @@ class TCPDNSRelay(DNSRelay):
 
     def add_to_loop(self, loop):
         DNSRelay.add_to_loop(self, loop)
-        loop.add(self._listen_sock, eventloop.POLL_IN)
+        loop.add(self._listen_sock, eventloop.POLL_IN, self)
 
-    def handle_events(self, events):
-        for sock, fd, event in events:
-            if sock == self._listen_sock:
-                self._handle_conn(sock)
-            elif sock in self._local_to_remote:
-                self._handle_local(sock, event)
-            elif sock in self._remote_to_local:
-                self._handle_remote(sock, event)
-                # TODO implement timeout
+    def handle_event(self, sock, fd, event):
+        if sock == self._listen_sock:
+            self._handle_conn(sock)
+        elif sock in self._local_to_remote:
+            self._handle_local(sock, event)
+        elif sock in self._remote_to_local:
+            self._handle_remote(sock, event)
+            # TODO implement timeout
 
 
 def main():
@@ -415,3 +412,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
