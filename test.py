@@ -30,7 +30,7 @@ try:
                 local_ready = True
 
         if local_ready and p2 is None:
-            p2 = Popen(dig_cmd.split(), shell=False, bufsize=0, close_fds=True)
+            p2 = Popen(dig_cmd.split(),   shell=False, bufsize=0, close_fds=True)
             break
 
     if p2 is not None:
